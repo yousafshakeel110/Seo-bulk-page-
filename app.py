@@ -1,5 +1,5 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 from bs4 import BeautifulSoup
 import re
 import json
@@ -12,6 +12,11 @@ from nltk.corpus import stopwords
 from nltk.tokenize import sent_tokenize
 import base64
 from pathlib import Path
+import zipfile
+from io import BytesIO
+
+# Initialize OpenAI client
+client = None
 
 # Download NLTK data
 try:
@@ -40,8 +45,10 @@ if 'generated_pages' not in st.session_state:
     st.session_state.generated_pages = []
 
 def set_openai_key(api_key):
-    openai.api_key = api_key
+    global client
+    client = OpenAI(api_key=api_key)
     st.session_state.api_key_set = True
+    st.session_state.client = client
 
 def extract_colors_from_html(html_content):
     """Extract color scheme from HTML"""
@@ -105,10 +112,12 @@ def generate_meta_tags(keyword, city, country, content_summary):
         'schema': schema_org
     }
 
-def generate_content_with_openai(keyword, city, state, country, api_key):
+def generate_content_with_openai(keyword, city, state, country, client_obj):
     """Generate optimized content using OpenAI"""
     try:
-        openai.api_key = api_key
+        if client_obj is None:
+            st.error("OpenAI client not initialized")
+            return None
         
         location_context = f" in {city}" if city else ""
         location_context += f", {state}" if state else ""
@@ -128,7 +137,7 @@ Requirements:
 Format response as JSON with keys: h1, intro, benefits, cta
 Each benefit should have: title, description"""
 
-        response = openai.ChatCompletion.create(
+        response = client_obj.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are an expert SEO copywriter specializing in local business content."},
@@ -160,7 +169,7 @@ Each benefit should have: title, description"""
         st.error(f"OpenAI Error: {str(e)}")
         return None
 
-def generate_html_page(keyword, city, state, country, content, meta_tags, colors, fonts, original_html, api_key):
+def generate_html_page(keyword, city, state, country, content, meta_tags, colors, fonts, original_html, client_obj):
     """Generate complete HTML page"""
     
     primary_color = colors[0] if colors else '#667eea'
@@ -372,7 +381,7 @@ with tabs[1]:
                 
                 content = generate_content_with_openai(
                     keyword, city, state, country, 
-                    st.session_state.api_key_set
+                    st.session_state.client
                 )
                 
                 if content:
@@ -387,7 +396,7 @@ with tabs[1]:
                         st.session_state.colors,
                         st.session_state.fonts,
                         st.session_state.html_content,
-                        openai.api_key
+                        st.session_state.client
                     )
                     
                     st.session_state.generated_pages.append({
